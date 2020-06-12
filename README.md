@@ -1,5 +1,5 @@
 # TileXYZLayerFor4326
-mapbox叠加4326底图
+通过mapbox的customLayer实现的叠加4326底图
 
 ```
 <!DOCTYPE html>
