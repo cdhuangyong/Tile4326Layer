@@ -45,8 +45,7 @@
 	map.on('load', function() {
 
 		var tileLayer = new TileXYZLayerFor4326({
-			//url:"http://192.168.60.81:8080/EzServer7/Maps/linewell/EzMap?Service=getImage&Type=RGB&ZoomOffset=0&Col={y}&Row={x}&Zoom={z}&V=1.0.0",
-			url:"https://t2.tianditu.gov.cn/vec_c/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=c&FORMAT=tiles&TILECOL={x}&TILEROW={y}&TILEMATRIX={z}&tk=755a7d8636035a8308201503309c944f"
+			url:"https://t2.tianditu.gov.cn/vec_c/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=c&FORMAT=tiles&TILECOL={x}&TILEROW={y}&TILEMATRIX={z}&tk=你的token"
 		});
 
 		tileLayer.addTo(map);
