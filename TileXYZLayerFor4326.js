@@ -4,16 +4,83 @@ window.TileXYZLayerFor4326 = (function(){
 		return value < min ? min : value > max ? max: value
 	}
 
+
+	function translateMat4(out, a, v) {
+		var x = v[0],
+				y = v[1],
+				z = v[2];
+		var a00, a01, a02, a03;
+		var a10, a11, a12, a13;
+		var a20, a21, a22, a23;
+	
+		if (a === out) {
+			out[12] = a[0] * x + a[4] * y + a[8] * z + a[12];
+			out[13] = a[1] * x + a[5] * y + a[9] * z + a[13];
+			out[14] = a[2] * x + a[6] * y + a[10] * z + a[14];
+			out[15] = a[3] * x + a[7] * y + a[11] * z + a[15];
+		} else {
+			a00 = a[0];
+			a01 = a[1];
+			a02 = a[2];
+			a03 = a[3];
+			a10 = a[4];
+			a11 = a[5];
+			a12 = a[6];
+			a13 = a[7];
+			a20 = a[8];
+			a21 = a[9];
+			a22 = a[10];
+			a23 = a[11];
+			out[0] = a00;
+			out[1] = a01;
+			out[2] = a02;
+			out[3] = a03;
+			out[4] = a10;
+			out[5] = a11;
+			out[6] = a12;
+			out[7] = a13;
+			out[8] = a20;
+			out[9] = a21;
+			out[10] = a22;
+			out[11] = a23;
+			out[12] = a00 * x + a10 * y + a20 * z + a[12];
+			out[13] = a01 * x + a11 * y + a21 * z + a[13];
+			out[14] = a02 * x + a12 * y + a22 * z + a[14];
+			out[15] = a03 * x + a13 * y + a23 * z + a[15];
+		}
+	
+		return out;
+	}
+
 	var caches = {
 		data:{},
-		get:function(key){
-			return this.data[key];
+		tiles:[],
+		maxTileCache:500,
+		getTileIndexId:function(){
+			
 		},
-		put:function(key,value){
-			this.data[key] = value;
+		get:function(cacheKey){
+			return this.data[cacheKey];
+		},
+		put:function(cacheKey,value){
+			if(this.tiles.length > this.maxTileCache){
+				this.deleteExpiredTiles();
+			}
+			if(!this.data[cacheKey]){
+				value.cacheKey = cacheKey;
+				this.data[cacheKey] = value;
+				this.tiles.unshift(value);
+			}
+		},
+		deleteExpiredTiles:function(){
+			const expiredTile = this.tiles.pop();
+			const cacheKey = expiredTile.cacheKey;
+			expiredTile.delete();
+			delete this.data[cacheKey];
 		},
 		clear:function(){
 			this.data = {};
+			this.tiles.length = 0;
 		}
 	};
 
@@ -161,7 +228,7 @@ window.TileXYZLayerFor4326 = (function(){
 					points: new Float32Array(3 * 6),
 					update:function(extent){
 					},
-					update1:function(extent){
+					update1:function(extent,matrix){
 						gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);
 						var centerMecatorExtent = extent;
 						var minx = centerMecatorExtent[0],
@@ -169,6 +236,14 @@ window.TileXYZLayerFor4326 = (function(){
 							maxx = centerMecatorExtent[2],
 							maxy = centerMecatorExtent[3];
 						var points = this.points;
+						var translateX = minx,
+							 translateY = miny;
+						minx -= translateX;
+						miny -= translateY;
+						maxx -= translateX;
+						maxy -= translateY;
+						_this._uniforms['uMatrix'].update(translateMat4([],matrix,[translateX, translateY, 0]));
+
 						points[0] = minx ,points[1] = maxy, points[2] = 0.0 , 
 						points[3] = maxx ,points[4] = maxy, points[5] = 0.0,  
 						points[6] = minx ,points[7] = miny, points[8] = 0.0  ,
@@ -205,9 +280,7 @@ window.TileXYZLayerFor4326 = (function(){
 					value:null,
 					location:gl.getUniformLocation(this._program,"u_Matrix"),
 					update:function(matrix){
-						if(this.value !== matrix){
-							gl.uniformMatrix4fv(this.location,false,matrix);
-						}
+						gl.uniformMatrix4fv(this.location,false,matrix);
 					}
 				},
 				uTranslate:{
@@ -269,9 +342,9 @@ window.TileXYZLayerFor4326 = (function(){
 				gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
 
-				for(let key in this._uniforms){
-					this._uniforms[key].update(matrix);
-				}
+				// for(let key in this._uniforms){
+				// 	this._uniforms[key].update(matrix);
+				// }
 
 				for(let key in this._buffers){
 					this._buffers[key].update();
@@ -279,11 +352,11 @@ window.TileXYZLayerFor4326 = (function(){
 
 				this.calcTilesInView();
 
-				this.renderTiles();
+				this.renderTiles(matrix);
 				
 			}
 		},
-		renderTiles(){
+		renderTiles(matrix){
 			var gl = this._gl;
 			var tiles = this._tiles;
 			var tile;
@@ -294,7 +367,7 @@ window.TileXYZLayerFor4326 = (function(){
 
 				tile.calcExtent();
 
-				this._buffers.aPositionBuffer.update1(tile.extent);
+				this._buffers.aPositionBuffer.update1(tile.extent, matrix);
 
 				gl.uniform4fv(this._uniforms.uTranslate.location,tile.translate);
 				gl.activeTexture(gl.TEXTURE0);
@@ -346,12 +419,13 @@ window.TileXYZLayerFor4326 = (function(){
 				for(j = startY; j < endY ; j ++){
 					key = this._key(z,i,j);
 					if(!tiles[key]){
-						caches.get(key);
-						if(caches.get(key)){
-							newTiles[key] = caches.get(key);
-						}else{
+						const cacheTile = caches.get(key);
+						if(cacheTile && cacheTile.loaded){
+							newTiles[key] = cacheTile;
+						}else if(!cacheTile){
 							tile = new Tile(z,i,j,resolution,this);
-							newTiles[key] = tile;
+							caches.put(key,tile);
+							// newTiles[key] = tile;
 						}
 					}else{
 						newTiles[key] = tiles[key];
@@ -586,6 +660,13 @@ window.TileXYZLayerFor4326 = (function(){
 			// this.translate[3] = tr.y - centerMecatorExtent[3];
 
 		},
+		delete:function(){
+			var gl = this._gl
+			if(this.texture && gl){
+				gl.deleteTexture(this.texture);
+				this.texture = null;
+			}
+		},
 		_load: function(){
 			var gl = this._gl
 			var _this = this;
@@ -596,7 +677,7 @@ window.TileXYZLayerFor4326 = (function(){
 
 			this.request = getImage(url,function(img){
 				delete _this .request;
-				if(_this._gl){
+				if(_this._gl && !_this.texture){
 					var texture = _this.texture = gl.createTexture();
 					gl.bindTexture(gl.TEXTURE_2D, texture);
 					gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -608,7 +689,7 @@ window.TileXYZLayerFor4326 = (function(){
 					gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 					gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
 					gl.bindTexture(gl.TEXTURE_2D, null);
-					caches.put(z+"/"+x+"/"+y,_this);
+					// caches.put(z+"/"+x+"/"+y,_this);
 					_this.loaded = true;
 					_this._layer.repaint();
 				}
